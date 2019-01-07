@@ -1,0 +1,193 @@
+
+---
+title: "Analysis on European Employment Data"
+author: "Rohit Bhaya"
+output: 
+  html_document:
+    theme: flatly
+    highlight: haddock
+    keep_md: True
+
+---
+
+##Introduction
+The data consists of the percentage employed in different industries in Europe countries during 1979.
+The purpose of examining this data is to get insight into patterns of employment (if any) in European countries in the time period of 1970s.
+
+Variable Names:
+
+* `Country`: Name of country
+* `Agr`: Percentage employed in agriculture
+* `Min`: Percentage employed in mining
+* `Man`: Percentage employed in manufacturing 
+* `PS`: Percentage employed in power supply industries
+* `Con`: Percentage employed in construction
+* `SI`: Percentage employed in service industries
+* `Fin`: Percentage employed in finance
+* `SPS`: Percentage employed in social and personal services
+* `TC`: Percentage employed in transport and communications 
+
+##Packages used
+
+The following packages have been used for the analysis:
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+library(ggplot2)      
+library(dplyr)
+library(tidyverse)  # data manipulation
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering algorithms & visualization
+library(dendextend) # for comparing two dendrograms
+library(corrplot)
+```
+
+##Data Exploration
+
+###Data Import
+
+The Country name column is changed to row name in the dataset.
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+employment <- read.csv("employment.txt", sep="\t")
+
+#get country name and scale variables
+row.names(employment)<-employment$Country
+employment <- employment[,-1]
+```
+
+###Data Structure
+
+The 9 variables in the data are numeric variables.
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+glimpse(employment)
+```
+
+###Data Summary
+
+The summary of each variable is shown below.
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+summary(employment)
+employment <- scale(employment)
+```
+
+###Checking for Correlation
+
+The following points are observed, basis the correlation of variables:
+
+* Agriculture has negative correlation with Service, construction, Manufacturing industries.
+* Transport, manufacturing and construction are also correlated
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+corrplot(cor(employment), order = "hclust")
+```
+
+###Distance Matrix
+
+On checking the distance matrix between the countries, Turkey and Yugoslavia are separated pretty far from other countries.
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+#distance matrix
+distance <- get_dist(employment)
+fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+##k-Means Clustering
+
+Clusters are created using K-means clustering algorithm.  For this, different values of k are used and the corresponding results ploted below.  
+Turkey and Yugoslavia seem to be pretty far away from other countries as we saw in distance matrix, creating a cluster of their own
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+#kmeans with diff k vals
+k2 <- kmeans(employment, centers = 2, nstart = 25)
+k3 <- kmeans(employment, centers = 3, nstart = 25)
+k4 <- kmeans(employment, centers = 4, nstart = 25)
+k5 <- kmeans(employment, centers = 5, nstart = 25)
+
+# plots to compare
+p1 <- fviz_cluster(k2, geom = "point",  data = employment) + ggtitle("k = 2")
+p2 <- fviz_cluster(k3, geom = "point",  data = employment) + ggtitle("k = 3")
+p3 <- fviz_cluster(k4, geom = "point",  data = employment) + ggtitle("k = 4")
+p4 <- fviz_cluster(k5, geom = "point",  data = employment) + ggtitle("k = 5")
+
+library(gridExtra)
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+
+###Selecting optimal number of clusters
+
+Using the Total sum of Square method to check for in-cluster similarity, we see a bend at 3 clusters. Hence, we take 3 clusters according to this chart.  
+Using average silhouette width method, which gives how well separated the clusters are, we find maximum separation at cluster size 3.  
+Hence we proceed with making 3 clusters
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+#selecting number of clusters
+set.seed(12420246)
+fviz_nbclust(employment, kmeans, method = "wss")
+fviz_nbclust(employment, kmeans, method = "silhouette")
+```
+
+###k-means with 3 clusters
+
+We create 3 clusters on the dataset. The clusters created depends on the starting point, hence we use 25 as the distinct number of starting points.
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+#creating final kmeans model
+set.seed(12420246)
+final <- kmeans(employment, 3, nstart = 25)
+```
+
+###Profiling the clusters
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+#comparing cluster wise
+k_means_cluster <- cbind(employment, kmeans_cluster = final$cluster)
+cluster <- aggregate(k_means_cluster,by=list(final$cluster),mean)
+cluster
+```
+
+##Hierarchical Clustering
+
+We also try to create clusters using hierarchical clustering method.  
+We get the following dendogram highlighting various clusters which can be created. Again Turkey and Yugoslavia have their own cluster. 
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+# Dissimilarity matrix
+d <- dist(employment, method = "euclidean")
+# Hierarchical clustering using Complete Linkage
+hc1 <- hclust(d, method = "complete" )
+# Plot the obtained dendrogram
+plot(hc1, cex = 0.6, hang = -1)
+```
+
+###Selecting optimal number of clusters
+
+Using average silhouette width method, which gives how well separated the clusters are, we find maximum separation at cluster size 2.  
+Using the Total sum of Square method to check for in-cluster similarity, we dont see a significant bend at until 3 or 4 clusters. But still its not decisive.
+Hence we proceed with making 2 clusters
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+#finding number of clusters
+fviz_nbclust(employment, FUN = hcut, method = "wss")
+fviz_nbclust(employment, FUN = hcut, method = "silhouette")
+```
+
+We see that one cluster conatins only 2 countries Yugoslavia and other cluster contains the rest.
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+#creating final model
+seed.3clust = cutree(hc1,k=2)
+table(seed.3clust)
+```
+
+###Visual Analysis
+
+We show the separation in the dendograms, and also show the plot of the 2 clusters.
+
+```{r message = FALSE, warning = FALSE, summary = FALSE}
+#plots
+plot(hc1, cex = 0.6, hang=-1)
+rect.hclust(hc1, k = 2, border = 2:5)
+fviz_cluster(list(data = employment, cluster = seed.3clust))
+```
